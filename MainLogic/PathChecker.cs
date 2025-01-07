@@ -38,7 +38,6 @@ public class PathChecker : MonoBehaviour
         Debug.Log($"Total Cells: {totalCells}, Free Cells: {freeCells}");
         return totalCells == freeCells; // Проверяем, свободны ли все ячейки
     }
-
     private Vector2Int GetCellPosition(CellDataBinder cell)
     {
         int siblingIndex = cell.transform.GetSiblingIndex();
@@ -54,6 +53,7 @@ public class PathChecker : MonoBehaviour
         int x = siblingIndex % gridWidth;
         int y = siblingIndex / gridWidth;
 
+        Debug.Log($"Cell {cell.name} at siblingIndex {siblingIndex} has position ({x}, {y})");
         return new Vector2Int(x, y);
     }
 
@@ -62,14 +62,13 @@ public class PathChecker : MonoBehaviour
         Vector2Int start = GetCellPosition(cellA);
         Vector2Int target = GetCellPosition(cellB);
 
-        Debug.Log($"Start: {start}, Target: {target}");
+        Debug.Log($"Checking path from {start} to {target}. StartFree: {cellA.isFree}, TargetFree: {cellB.isFree}");
 
         var openSet = new SortedSet<Vector2Int>(Comparer<Vector2Int>.Create((a, b) =>
         {
             float fA = GetCost(a, start, target);
             float fB = GetCost(b, start, target);
-            if (fA == fB) return a.GetHashCode().CompareTo(b.GetHashCode());
-            return fA.CompareTo(fB);
+            return fA == fB ? a.GetHashCode().CompareTo(b.GetHashCode()) : fA.CompareTo(fB);
         }));
 
         HashSet<Vector2Int> closedSet = new HashSet<Vector2Int>();
@@ -84,25 +83,27 @@ public class PathChecker : MonoBehaviour
             Vector2Int current = openSet.Min;
             openSet.Remove(current);
 
+            Debug.Log($"Current node: {current}");
+
             if (current == target)
             {
-                Debug.Log("Path found!");
+                Debug.Log($"Path found from {start} to {target}");
                 ReconstructPath(cameFrom, current);
                 return true;
             }
-
 
             closedSet.Add(current);
 
             foreach (Vector2Int neighbor in GetNeighbors(current))
             {
+                Debug.Log($"Evaluating neighbor: {neighbor}");
+
                 if (closedSet.Contains(neighbor))
                 {
                     Debug.Log($"Neighbor {neighbor} is in closedSet.");
                     continue;
                 }
 
-                // Целевая ячейка должна быть допустимой, даже если она не свободна
                 if (!IsCellFree(neighbor) && neighbor != target)
                 {
                     Debug.Log($"Neighbor {neighbor} is not free and not the target.");
@@ -124,12 +125,12 @@ public class PathChecker : MonoBehaviour
                     }
                 }
             }
-
         }
 
-        Debug.Log("No path found.");
+        Debug.LogWarning($"No path found from {start} to {target}");
         return false;
     }
+
     private void ReconstructPath(Dictionary<Vector2Int, Vector2Int> cameFrom, Vector2Int current)
     {
         List<Vector2Int> path = new List<Vector2Int>();
@@ -175,7 +176,8 @@ public class PathChecker : MonoBehaviour
 
         if (siblingIndex < 0 || siblingIndex >= gridParent.childCount)
         {
-            return false; // Индекс за пределами диапазона
+            Debug.LogWarning($"Invalid sibling index: {siblingIndex}");
+            return false;
         }
 
         Transform cell = gridParent.GetChild(siblingIndex);
@@ -187,8 +189,9 @@ public class PathChecker : MonoBehaviour
             return false;
         }
 
-        return binder.isFree; // Проверяем свойство isFree
+        return binder.isFree;
     }
+
     public Vector3 GetWorldPositionFromGridPosition(Vector2Int gridPosition)
     {
         int gridWidth = gridParent.GetComponent<GridLayoutGroup>().constraintCount;

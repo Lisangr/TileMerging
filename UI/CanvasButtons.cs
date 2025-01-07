@@ -2,6 +2,7 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 using YG;
+using static UnityEngine.ParticleSystem;
 
 public class CanvasButtons : MonoBehaviour
 {
@@ -12,11 +13,12 @@ public class CanvasButtons : MonoBehaviour
     public GameObject leadersPanel;
     public GameObject defeatPanel;
     public GameObject winPanel;
-    
+    public GameObject infoPanel;
+
     [Header("Canvases")]
     public GameObject startCanvas;
     public GameObject gameCanvas;
-    
+
     [Header("Buttons")]
     public GameObject skipButton;   
     public GameObject restartButton;
@@ -24,46 +26,56 @@ public class CanvasButtons : MonoBehaviour
     [Header ("Others")]
     public Transform spawnPoint;
     public Text counterText;
+    public GameObject[] particles;
 
     private int currentLevelIndex;
     private GameObject currentPrefabInstance; // Текущий экземпляр префаба
     private int AdID = 1;
+    private int levelFromYG;
 
     public delegate void DeactivationAction();
     public static event DeactivationAction OnDectevated;
     private void OnEnable()
     {
         YandexGame.RewardVideoEvent += Rewarded;
+        YandexGame.GetDataEvent += LoadFromCloud;
+    }
+
+    private void LoadFromCloud()
+    {
+        levelFromYG = YandexGame.savesData.level;
+        Debug.Log("Загружен уровень" + levelFromYG);
     }
 
     public void Rewarded(int id)
     {
         if (id != AdID) return; // Игнорируем события с другим ID
 
-        OnExitButtonClick();
+        ExitAfterReward();
         skipButton.gameObject.SetActive(false);
     }
     private void OnDisable()
     {
         YandexGame.RewardVideoEvent -= Rewarded;
+        YandexGame.GetDataEvent -= LoadFromCloud;
     }
     private void Awake()
     {
-        if (PlayerPrefs.HasKey("Level"))
+        LoadFromCloud();
+        
+        currentLevelIndex = PlayerPrefs.GetInt("Level", 1);
+        if (currentLevelIndex >= levelFromYG)
         {
-            currentLevelIndex = PlayerPrefs.GetInt("Level");
+            gameCanvas.SetActive(false);
+            startCanvas.SetActive(true);
+            YandexGame.savesData.level = currentLevelIndex;
         }
         else
         {
-            currentLevelIndex = 1; // Устанавливаем уровень по умолчанию
+            currentLevelIndex = levelFromYG;
             PlayerPrefs.SetInt("Level", currentLevelIndex);
-            PlayerPrefs.Save();
         }
-
-        gameCanvas.SetActive(false);
-        startCanvas.SetActive(true);
     }
-
     private void Start() => OnCloseButtonClick();
 
     public void OnCloseButtonClick()
@@ -74,6 +86,9 @@ public class CanvasButtons : MonoBehaviour
         if (leadersPanel != null) leadersPanel.SetActive(false);
         if (defeatPanel != null) defeatPanel.SetActive(false);
         if (winPanel != null) winPanel.SetActive(false);
+        if (infoPanel != null) infoPanel.SetActive(false);
+
+        ActivateParticles();
     }
     private void UpdateUI()
     {
@@ -85,15 +100,22 @@ public class CanvasButtons : MonoBehaviour
         winPanel.SetActive(true);
         restartButton.gameObject.SetActive(false);
     }
-
+    public void ShowInfoPanel() => infoPanel.SetActive(true);
     public void ShowDefeatPanel() => defeatPanel.SetActive(true);
 
     public void OnHelpButtonClick() => helpPanel.SetActive(true);
 
-    public void OnSettingsButtonClick() => settingsPanel.SetActive(true);
+    public void OnSettingsButtonClick()
+    {
+        settingsPanel.SetActive(true);
+        DeactivateParticles();
+    }
 
-    public void OnLeadersButtonClick() => leadersPanel.SetActive(true);
-
+    public void OnLeadersButtonClick()
+    {
+        leadersPanel.SetActive(true);
+        DeactivateParticles();
+    }
     public void OnStartButtonClick()
     {
         if (PlayerPrefs.HasKey("Level"))
@@ -103,9 +125,11 @@ public class CanvasButtons : MonoBehaviour
 
         gameCanvas.SetActive(true);
         skipButton.gameObject.SetActive(true);
+        ShowInfoPanel();
         startCanvas.SetActive(false);
         UpdateUI();
 
+        restartButton.gameObject.SetActive(true);
         InstantiatePrefabForCurrentLevel();
     }
 
@@ -120,10 +144,16 @@ public class CanvasButtons : MonoBehaviour
     public void OnExitButtonClick()
     {
         YandexGame.FullscreenShow();
-        PlayerPrefs.SetInt("Level", currentLevelIndex + 1);
 
-        YandexGame.NewLeaderboardScores("Levels", currentLevelIndex);
+        PlayerPrefs.SetInt("Level", currentLevelIndex + 1);
         PlayerPrefs.Save();
+
+        if (currentLevelIndex > levelFromYG)
+        {
+            YandexGame.savesData.level = currentLevelIndex + 1;
+            YandexGame.SaveProgress();
+            YandexGame.NewLeaderboardScores("Levels", currentLevelIndex);
+        }
 
         DeactivateCurrentLevelPrefab();
 
@@ -131,7 +161,24 @@ public class CanvasButtons : MonoBehaviour
         gameCanvas.SetActive(false);
         startCanvas.SetActive(true);
     }
+    private void ExitAfterReward()
+    {
+        PlayerPrefs.SetInt("Level", currentLevelIndex + 1);
+        PlayerPrefs.Save();
 
+        if (currentLevelIndex > levelFromYG)
+        {
+            YandexGame.savesData.level = currentLevelIndex + 1;
+            YandexGame.SaveProgress();
+            YandexGame.NewLeaderboardScores("Levels", currentLevelIndex);
+        }
+
+        DeactivateCurrentLevelPrefab();
+
+        winPanel.SetActive(false);
+        gameCanvas.SetActive(false);
+        startCanvas.SetActive(true);
+    }
     public void OnPauseMenuClick() => menuPanel.SetActive(true);
 
     public void RestartCurrentScene()
@@ -189,7 +236,6 @@ public class CanvasButtons : MonoBehaviour
         }
     }
 
-
     private void DeactivateCurrentLevelPrefab()
     {
         if (currentPrefabInstance != null)
@@ -200,4 +246,25 @@ public class CanvasButtons : MonoBehaviour
 
         OnDectevated?.Invoke();
     }
+    private void DeactivateParticles()
+    {
+        foreach (GameObject particle in particles)
+        {
+            if (particle != null)
+            {
+                particle.SetActive(false);
+            }
+        }
+    }
+    private void ActivateParticles()
+    {
+        foreach (GameObject particle in particles)
+        {
+            if (particle != null)
+            {
+                particle.SetActive(true);
+            }
+        }
+    }
+
 }

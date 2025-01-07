@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using UnityEngine.EventSystems;
 
@@ -9,57 +11,84 @@ public class CellDataBinder : MonoBehaviour, IPointerClickHandler
     public bool isFree;
     public bool isInitialized = false;
     public GameObject[] particleEffectPrefabs; // Массив систем частиц
+    private static List<CellDataBinder> clickHistory = new List<CellDataBinder>(); // История кликов
     public void OnPointerClick(PointerEventData eventData)
     {
         Debug.Log($"Clicked on {gameObject.name} with data {assignedData?.name}");
 
-        // Проверяем двойной клик на одной и той же ячейке
-        if (lastClickedCell == this)
+        if (isFree)
         {
-            Debug.Log("Double click on the same cell detected. No action performed.");
-            lastClickedCell = null; // Сбрасываем
+            Debug.Log("Clicked on a free cell. Ignoring.");
             return;
         }
 
-        if (lastClickedCell == null)
+        clickHistory.RemoveAll(cell => cell == null || !cell.gameObject.activeInHierarchy);
+
+        if (clickHistory.Count > 0 && clickHistory[^1] == this)
         {
-            lastClickedCell = this;
+            Debug.LogWarning("Clicked on the same cell twice consecutively. Ignoring.");
             return;
         }
 
-        // Проверяем данные ячеек
-        if (assignedData != lastClickedCell.assignedData)
+        clickHistory.Add(this);
+
+        if (clickHistory.Count > 2)
         {
-            Debug.Log("Cells have different data, cannot be destroyed.");
-            lastClickedCell = null;
-            return;
+            clickHistory.RemoveAt(0);
         }
 
-        PathChecker pathChecker = transform.parent.GetComponent<PathChecker>();
+        if (clickHistory.Count == 2)
+        {
+            CellDataBinder firstCell = clickHistory[0];
+            CellDataBinder secondCell = clickHistory[1];
 
-        if (pathChecker.AreCellsAdjacent(this, lastClickedCell))
-        {
-            DestroyCells(this, lastClickedCell);
-        }
-        else if (pathChecker.IsPathAvailable(this, lastClickedCell))
-        {
-            DestroyCells(this, lastClickedCell);
-        }
-        else
-        {
-            Debug.Log("No path available.");
-        }
+            Debug.Log($"Attempting to match {firstCell.name} and {secondCell.name}");
 
-        lastClickedCell = null;
+            if (firstCell.assignedData == secondCell.assignedData)
+            {
+                PathChecker pathChecker = transform.parent.GetComponent<PathChecker>();
+
+                if (pathChecker != null &&
+                    (pathChecker.AreCellsAdjacent(firstCell, secondCell) ||
+                     pathChecker.IsPathAvailable(firstCell, secondCell)))
+                {
+                    Debug.Log("Path found. Destroying cells.");
+                    DestroyCells(firstCell, secondCell);
+                    ResetClickState();
+                }
+                else
+                {
+                    Debug.LogWarning("No path available between selected cells. Keeping history.");
+                }
+            }
+        }
     }
+
+
+    private void ResetClickState()
+    {
+        Debug.Log("Resetting click state and clearing history.");
+
+        // Удаляем из истории кликов недействительные ссылки
+        clickHistory.RemoveAll(cell => cell == null || !cell.gameObject.activeInHierarchy);
+
+        // Полный сброс истории
+        clickHistory.Clear();
+    }
+
 
     private void DestroyCells(CellDataBinder cellA, CellDataBinder cellB)
     {
-        Debug.Log("DestroyCells called.");
+        if (cellA == null || cellB == null)
+        {
+            Debug.LogError("One or both cells are null. Cannot destroy.");
+            return;
+        }
 
         if (cellA == cellB)
         {
-            Debug.LogError("Attempted to destroy the same cell. Action aborted.");
+            Debug.LogError("Attempted to destroy the same cell twice. Action aborted.");
+            ResetClickState();
             return;
         }
 
@@ -70,28 +99,36 @@ public class CellDataBinder : MonoBehaviour, IPointerClickHandler
             return;
         }
 
+        if (cellFreePrefab == null)
+        {
+            Debug.LogError("cellFreePrefab is not assigned.");
+            return;
+        }
+
+        Debug.Log($"Destroying cells: {cellA.name} and {cellB.name}");
+
         Transform parentA = cellA.transform.parent;
         Transform parentB = cellB.transform.parent;
 
         int indexA = cellA.transform.GetSiblingIndex();
         int indexB = cellB.transform.GetSiblingIndex();
 
-        if (cellFreePrefab == null)
+        // Защита от повторного создания клеток
+        if (parentA.GetChild(indexA).gameObject != cellA.gameObject ||
+            parentB.GetChild(indexB).gameObject != cellB.gameObject)
         {
-            Debug.LogError("cellFreePrefab is not assigned.");
+            Debug.LogWarning("Cells have already been replaced. Action aborted.");
             return;
         }
-        // Спавн случайной системы частиц
+
         SpawnRandomParticleEffect(cellA.transform.position);
         SpawnRandomParticleEffect(cellB.transform.position);
 
-        // Создаем пустые ячейки
         GameObject freeCellA = Instantiate(cellFreePrefab, parentA);
         freeCellA.transform.SetSiblingIndex(indexA);
         GameObject freeCellB = Instantiate(cellFreePrefab, parentB);
         freeCellB.transform.SetSiblingIndex(indexB);
 
-        // Настраиваем свойства свободных ячеек
         CellDataBinder freeBinderA = freeCellA.GetComponent<CellDataBinder>();
         CellDataBinder freeBinderB = freeCellB.GetComponent<CellDataBinder>();
 
@@ -100,18 +137,24 @@ public class CellDataBinder : MonoBehaviour, IPointerClickHandler
             freeBinderA.isFree = true;
             freeBinderA.isInitialized = true;
         }
+        else
+        {
+            Debug.LogError("Free cell A does not contain a CellDataBinder component.");
+        }
 
         if (freeBinderB != null)
         {
             freeBinderB.isFree = true;
             freeBinderB.isInitialized = true;
         }
+        else
+        {
+            Debug.LogError("Free cell B does not contain a CellDataBinder component.");
+        }
 
-        // Уничтожаем старые объекты
         Destroy(cellA.gameObject);
         Destroy(cellB.gameObject);
 
-        // Проверяем условие выигрыша
         if (pathChecker.AreAllCellsFree())
         {
             Debug.Log("Victory! All cells are free.");
