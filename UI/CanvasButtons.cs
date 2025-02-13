@@ -20,7 +20,6 @@ public class CanvasButtons : MonoBehaviour
     public GameObject gameCanvas;
 
     [Header("Buttons")]
-    public GameObject skipButton;   
     public GameObject restartButton;
 
     [Header ("Others")]
@@ -52,7 +51,6 @@ public class CanvasButtons : MonoBehaviour
         if (id != AdID) return; // Игнорируем события с другим ID
 
         ExitAfterReward();
-        skipButton.gameObject.SetActive(false);
     }
     private void OnDisable()
     {
@@ -124,7 +122,6 @@ public class CanvasButtons : MonoBehaviour
         }
 
         gameCanvas.SetActive(true);
-        skipButton.gameObject.SetActive(true);
         ShowInfoPanel();
         startCanvas.SetActive(false);
         UpdateUI();
